@@ -1,0 +1,42 @@
+use colored::Colorize;
+use futures_util::StreamExt;
+use tokio_tungstenite::tungstenite::Message;
+use crate::messages::{BestDeal, handle_ping_message};
+
+pub async fn start_best_deal_feed(ws_url: String) {
+    println!("Starting best deal feed...");
+
+    let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("Failed to connect to WebSocket");
+    let (mut write, mut read) = ws_stream.split();
+
+    while let Some(msg) = read.next().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                if let Ok(depth_update) = serde_json::from_str::<BestDeal>(&text) {
+                    if let (Some(best_bid), Some(best_ask)) = (
+                        depth_update.bids.first(),
+                        depth_update.asks.first(),
+                    ) {
+                        println!("{}",
+                                 format!("Best Deal - Last Update ID: {}, Best Bid: {:?}, Best Ask: {:?}",
+                                         depth_update.last_update_id, best_bid, best_ask).magenta().bold());
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("{}", format!("Error reading WebSocket: {:?}", err).red().bold());
+                break;
+            }
+            Ok(Message::Ping(data)) => {
+                handle_ping_message("BestDeal feed", data, &mut write).await;
+            }
+            _ => {
+                eprintln!("{}", format!("BestDeal - Unknown message received: {:?}", msg).red().bold());
+            }
+        }
+    }
+
+    println!("Best deal feed stopped.");
+}
