@@ -15,14 +15,7 @@ pub async fn start_best_deal_feed(ws_url: String) {
         match msg {
             Ok(Message::Text(text)) => {
                 if let Ok(depth_update) = serde_json::from_str::<BestDeal>(&text) {
-                    if let (Some(best_bid), Some(best_ask)) = (
-                        depth_update.bids.first(),
-                        depth_update.asks.first(),
-                    ) {
-                        println!("{}",
-                                 format!("Best Deal - Last Update ID: {}, Best Bid: {:?}, Best Ask: {:?}",
-                                         depth_update.last_update_id, best_bid, best_ask).magenta().bold());
-                    }
+                    println!("{}", depth_update);
                 }
             }
             Err(err) => {

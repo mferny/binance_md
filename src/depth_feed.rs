@@ -45,8 +45,8 @@ pub async fn start_depth_feed(
             Ok(Message::Text(text)) => {
                 if let Ok(update) = serde_json::from_str::<OrderBookUpdate>(&text) {
                     debug_print!(
-                        "Connection {}: Received update U={}, u={}",
-                        connection_id, update.U, update.u
+                        "Connection {}: Received update first_trade_id = {}, last_trade_id = {}",
+                        connection_id, update.first_trade_id, update.last_trade_id
                     );
 
                     handle_update(Arc::clone(&event_buffer), update, Arc::clone(&order_book), Arc::clone(&state), Arc::clone(&timeout_state)).await;

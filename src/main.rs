@@ -12,13 +12,10 @@ mod best_deal;
 mod agg_trade;
 mod depth_feed;
 
-use tokio::sync::{RwLock};
-use futures_util::{StreamExt, future, SinkExt};
-use reqwest;
+use tokio::sync::RwLock;
+use futures_util::future;
 use std::sync::Arc;
 use tokio::time::Duration;
-use colored::Colorize;
-
 
 use order_book::{OrderBook, InstrumentState};
 use recovery::{monitor_and_recover, TimeoutState};

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap};
+use std::fmt;
 use std::sync::Arc;
 use colored::Colorize;
 use ordered_float::OrderedFloat;
@@ -65,7 +66,7 @@ impl OrderBook {
         }
 
         debug_print!("Applied snapshot");
-        self.print();
+        println!("{}", self);
     }
 
     pub async fn apply_update_locked(
@@ -79,18 +80,18 @@ impl OrderBook {
     pub fn apply_update(&mut self, update: &OrderBookUpdate) -> Result<(), String> {
         // in this case we already either processed these updates or restored a
         // later state from snapshot
-        if update.u <= self.last_applied_id {
+        if update.last_trade_id <= self.last_applied_id {
             return Ok(());
         }
-        if update.U > self.last_applied_id + 1 {
+        if update.first_trade_id > self.last_applied_id + 1 {
             return Err(format!(
                 "Update ID in increment is more then in snapshot by {} \
                 Will recover from a newer snapshot and buffer updates till recovered.",
-                update.U - self.last_applied_id
+                update.first_trade_id - self.last_applied_id
             ));
         }
 
-        for bid in &update.b {
+        for bid in &update.bids {
             let price = OrderedFloat(bid[0].parse::<f64>().unwrap());
             let qty: f64 = bid[1].parse().unwrap();
             // remove level with zero qty
@@ -100,7 +101,7 @@ impl OrderBook {
                 self.bids.insert(price, qty);
             }
         }
-        for ask in &update.a {
+        for ask in &update.asks {
             let price = OrderedFloat(ask[0].parse::<f64>().unwrap());
             let qty: f64 = ask[1].parse().unwrap();
             if qty == 0.0 {
@@ -110,24 +111,30 @@ impl OrderBook {
             }
         }
 
-        self.last_applied_id = update.u;
+        self.last_applied_id = update.last_trade_id;
 
         debug_print!("Applied update");
-        self.print();
+        println!("{}", self);
 
         Ok(())
     }
+}
 
-    pub fn print(&self) {
-        println!("{}", "Order Book:".blue().bold());
-        println!("{}", "Bids:".blue().bold());
-        // taking top 5 updates for visibility
+impl fmt::Display for OrderBook {
+    // taking first 5 lvl for visibility
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", "Order Book:".blue().bold())?;
+
+        writeln!(f, "{}", "Bids:".blue())?;
         for (price, qty) in self.bids.iter().rev().take(5) {
-            println!("{}", format!("Price: {:.6}, Qty: {:.6}", price, qty).blue().bold());
+            writeln!(f, "{}", format!("  Price: {}, Qty: {}", price, qty).blue().bold())?;
         }
-        println!("{}", "Asks:".blue().bold());
+
+        writeln!(f, "{}", "Asks:".blue().bold())?;
         for (price, qty) in self.asks.iter().take(5) {
-            println!("{}", format!("Price: {:.6}, Qty: {:.6}", price, qty).blue().bold());
+            writeln!(f, "{}", format!("  Price: {}, Qty: {}", price, qty).blue().bold())?;
         }
+
+        Ok(())
     }
 }

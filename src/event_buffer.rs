@@ -15,7 +15,7 @@ pub struct PrioritizedOrderBookUpdate(pub OrderBookUpdate);
 impl Ord for PrioritizedOrderBookUpdate {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse the comparison for a min-heap
-        other.0.U.cmp(&self.0.U)
+        other.0.first_trade_id.cmp(&self.0.first_trade_id)
     }
 }
 
@@ -27,7 +27,7 @@ impl PartialOrd for PrioritizedOrderBookUpdate {
 
 impl PartialEq for PrioritizedOrderBookUpdate {
     fn eq(&self, other: &Self) -> bool {
-        self.0.U == other.0.U
+        self.0.first_trade_id == other.0.first_trade_id && self.0.last_trade_id == other.0.last_trade_id
     }
 }
 
@@ -52,7 +52,7 @@ impl EventBuffer {
         state: Arc<RwLock<InstrumentState>>,
         timeout_state: Arc<TimeoutState>,
     ) {
-        debug_print!("Buffering update: {}", update.U);
+        debug_print!("Buffering update with first_trade_id = {}", update.first_trade_id);
         self.buffer.push(PrioritizedOrderBookUpdate(update));
 
         self.process_buffered_updates(order_book, state, Arc::clone(&timeout_state)).await;
@@ -69,7 +69,7 @@ impl EventBuffer {
 
             let next_update = {
                 let mut state_lock = state.write().await;
-                let mut book = order_book.write().await;
+                let book = order_book.write().await;
 
                 if self.buffer.is_empty() {
                     debug_print!("No updates in the buffer.");
@@ -78,42 +78,44 @@ impl EventBuffer {
                 } else if let Some(PrioritizedOrderBookUpdate(update)) = self.buffer.peek() {
                     if *state_lock == InstrumentState::JustRecovered {
                         // in JustRecovered state, take updates in range
-                        if update.U <= book.last_applied_id + 1 && update.u >= book.last_applied_id + 1 {
-                            debug_print!("Taking update after recovery: U={}, u={}", update.U, update.u);
+                        if update.first_trade_id <= book.last_applied_id + 1 && update.last_trade_id >= book.last_applied_id + 1 {
+                            debug_print!("Taking update after recovery: first_trade_id = {}, last_trade_id = {}",
+                                update.first_trade_id, update.last_trade_id);
                             *state_lock = InstrumentState::Normal;
                             debug_print!("State set to Normal after processing.");
                             self.buffer.pop().map(|entry| entry.0) // remove and process the update
-                        } else if update.U > book.last_applied_id + 1 {
+                        } else if update.first_trade_id > book.last_applied_id + 1 {
                             debug_print!(
-                                "Future update detected after recovery: U={}, waiting for prior updates. Last Applied ID={}",
-                                update.U, book.last_applied_id
+                                "Future update detected after recovery: first_trade_id ={}, waiting for prior updates. Last applied ID={}",
+                                update.first_trade_id, book.last_applied_id
                             );
                             process_next_update = false; // stop processing further updates
                             None
                         } else {
                             debug_print!(
                                 "Outdated update after recovery: U={}, removing from buffer. Last Applied ID={}",
-                                update.U, book.last_applied_id
+                                update.first_trade_id, book.last_applied_id
                             );
                             self.buffer.pop(); // remove outdated update
                             None
                         }
                     } else {
                         // normal state: take only consecutive updates
-                        if update.U == book.last_applied_id + 1 {
-                            debug_print!("Taking consecutive update: U={}, u={}", update.U, update.u);
+                        if update.first_trade_id == book.last_applied_id + 1 {
+                            debug_print!("Taking consecutive update: first_trade_id = {}, last_trade_id = {}",
+                                update.first_trade_id, update.last_trade_id);
                             self.buffer.pop().map(|entry| entry.0) // remove and process the update
-                        } else if update.U > book.last_applied_id + 1 {
+                        } else if update.first_trade_id > book.last_applied_id + 1 {
                             debug_print!(
-                                "Future update detected: U={}, waiting for prior updates. Last Applied ID={}",
-                                update.U, book.last_applied_id
+                                "Future update detected: first_trade_id = {}, waiting for prior updates. Last Applied ID={}",
+                                update.first_trade_id, book.last_applied_id
                             );
                             process_next_update = false; // stop processing further updates
                             None
                         } else {
                             debug_print!(
-                                "Outdated update detected: U={}, removing from buffer. Last Applied ID={}",
-                                update.U, book.last_applied_id
+                                "Outdated update detected: first_trade_id = {}, removing from buffer. Last Applied ID={}",
+                                update.first_trade_id, book.last_applied_id
                             );
                             self.buffer.pop(); // remove outdated update
                             None
@@ -129,7 +131,7 @@ impl EventBuffer {
                 if let Err(err) = OrderBook::apply_update_locked(&order_book, &update).await {
                     eprintln!("{}",
                         format!("Error applying buffered update: {}. Update ID: {:?}",
-                        err, update.U).red().bold());
+                        err, update.first_trade_id).red().bold());
                 } else {
                     // reset the inactivity timer on successful update
                     timeout_state.reset().await;
@@ -141,11 +143,5 @@ impl EventBuffer {
                 break;
             }
         }
-    }
-
-    // check the size of the buffer
-    pub async fn len(event_buffer: Arc<RwLock<Self>>) -> usize {
-        let buffer = event_buffer.read().await;
-        buffer.buffer.len()
     }
 }

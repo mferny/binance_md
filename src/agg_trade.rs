@@ -15,8 +15,7 @@ pub async fn start_aggtrade_feed(ws_url: String) {
         match msg {
             Ok(Message::Text(text)) => {
                 if let Ok(trade) = serde_json::from_str::<AggTrade>(&text) {
-                    println!("{}", format!("aggTrade - Symbol: {}, Price: {}, Quantity: {}, Maker: {}",
-                                           trade.s, trade.p, trade.q, trade.m).cyan().bold());
+                    println!("{}", trade)
                 }
             }
             Err(err) => {
